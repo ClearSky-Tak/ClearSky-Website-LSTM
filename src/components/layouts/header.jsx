@@ -22,7 +22,7 @@ export default function Header() {
                             className="w-10 h-10 object-contain"
                         />
                         <div id="icon-class" className="text-2xl font-bold lg:text-large">
-                            <span id="icon-name">ClearSky - LSTM</span>
+                            <span id="icon-name">ClearSky - CNN TCN-BiLSTM</span>
                         </div>
                     </NavLink>
                 </div>

@@ -4,6 +4,8 @@ import React, { useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LocationCard from '../components/card/LocationCard.jsx';
 import WeatherCard from '../components/card/weatherCard.jsx';
+import AnalogClock from '../components/AnalogClock.jsx';
+import DayNightIndicator from '../components/DayNightIndicator.jsx';
 import { predictFromModel } from '../utils/predict.js';
 
 export default function Camera() {
@@ -21,7 +23,7 @@ export default function Camera() {
     // Camera devices and selection
     const [devices, setDevices] = useState([]); // list of videoinput devices
     const [selectedDeviceId, setSelectedDeviceId] = useState(''); // desktop selection
-    const [facing, setFacing] = useState('environment'); // mobile: 'user' | 'environment'
+    const [facing] = useState('environment'); // mobile: 'user' | 'environment'
     const navigate = useNavigate();
 
     // Helper: stop current video stream
@@ -100,13 +102,6 @@ export default function Camera() {
                             if (addr) setLocation((prev) => ({ ...prev, address: addr }));
                         })
                         .catch(() => {});
-                    const apiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
-                    if (apiKey) {
-                        fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${apiKey}&units=metric&lang=id`)
-                            .then(res => res.json())
-                            .then(setWeather)
-                            .catch(() => {});
-                    }
                 },
                 () => {},
                 { enableHighAccuracy: true, timeout: 10000 }
@@ -116,6 +111,27 @@ export default function Camera() {
             window.removeEventListener('resize', updateBP);
         };
     }, []);
+
+    // Fetch weather data setiap menit
+    useEffect(() => {
+        const apiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
+        if (!apiKey || !location.lat || !location.lng) return;
+
+        const fetchWeather = () => {
+            fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${location.lat}&lon=${location.lng}&appid=${apiKey}&units=metric&lang=id`)
+                .then(res => res.json())
+                .then(setWeather)
+                .catch(() => {});
+        };
+
+        // Fetch immediately
+        fetchWeather();
+
+        // Fetch setiap 1 menit (60000ms)
+        const intervalId = setInterval(fetchWeather, 60000);
+
+        return () => clearInterval(intervalId);
+    }, [location.lat, location.lng]);
 
     // Start/refresh camera stream when deviceId or facing/mobile changes
     useEffect(() => {
@@ -232,21 +248,21 @@ export default function Camera() {
         setSelectedDeviceId(id);
         await startStream({ deviceId: id });
     };
-    const onFlip = async () => {
-        const next = facing === 'environment' ? 'user' : 'environment';
-        setFacing(next);
-        // Try facingMode. If not honored, choose device by label keyword if available
-        if (devices.length > 0) {
-            const target = devices.find(d => d.label.toLowerCase().includes(next === 'environment' ? 'back' : 'front'))
-                || devices.find(d => d.label.toLowerCase().includes(next === 'environment' ? 'rear' : 'user'));
-            if (target) {
-                setSelectedDeviceId(target.deviceId);
-                await startStream({ deviceId: target.deviceId });
-                return;
-            }
-        }
-        await startStream({ facingMode: next });
-    };
+    // const onFlip = async () => {
+    //     const next = facing === 'environment' ? 'user' : 'environment';
+    //     setFacing(next);
+    //     // Try facingMode. If not honored, choose device by label keyword if available
+    //     if (devices.length > 0) {
+    //         const target = devices.find(d => d.label.toLowerCase().includes(next === 'environment' ? 'back' : 'front'))
+    //             || devices.find(d => d.label.toLowerCase().includes(next === 'environment' ? 'rear' : 'user'));
+    //         if (target) {
+    //             setSelectedDeviceId(target.deviceId);
+    //             await startStream({ deviceId: target.deviceId });
+    //             return;
+    //         }
+    //     }
+    //     await startStream({ facingMode: next });
+    // };
 
     return (
         <div className="container mx-auto px-4 py-8">
@@ -261,23 +277,15 @@ export default function Camera() {
                 {/* Area Kamera */}
                 <div className="md:w-1/2 flex flex-col items-center">
                     <h2 className="text-xl font-bold mb-4">Area Kamera</h2>
-                    {/* Desktop: camera dropdown */}
-                    {isDesktop && (
-                        <div className="w-full max-w-md mb-3 flex items-center gap-2">
-                            <label className="font-medium">Kamera:</label>
-                            <select value={selectedDeviceId} onChange={onSelectDevice} className="select select-bordered w-full">
-                                {devices.map(d => (
-                                    <option key={d.deviceId} value={d.deviceId}>{d.label || `Kamera ${d.deviceId.slice(0,6)}`}</option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
-                    {/* Mobile: flip camera */}
-                    {isMobile && (
-                        <div className="w-full max-w-md mb-3 flex justify-end">
-                            <button onClick={onFlip} className="btn btn-primary mx-auto">Flip Camera ({facing === 'environment' ? 'Belakang' : 'Depan'})</button>
-                        </div>
-                    )}
+                    {/* Camera dropdown for all devices */}
+                    <div className="w-full max-w-md mb-3 flex items-center gap-2">
+                        <label className="font-medium">Kamera:</label>
+                        <select value={selectedDeviceId} onChange={onSelectDevice} className="select select-bordered w-full">
+                            {devices.map(d => (
+                                <option key={d.deviceId} value={d.deviceId}>{d.label || `Kamera ${d.deviceId.slice(0,6)}`}</option>
+                            ))}
+                        </select>
+                    </div>
                     <video ref={videoRef} className="w-full rounded shadow mb-4" autoPlay />
                     <canvas ref={canvasRef} style={{ display: 'none' }} />
                     <input type="file" accept="image/*" onChange={onFileChange} className="file-input file-input-bordered w-full max-w-md" />
@@ -293,8 +301,18 @@ export default function Camera() {
                         </div>
                     )}
 
-                    <h2 className="text-xl font-bold mt-2">Hasil Deteksi (Perkiraan 1 Jam kedepan)</h2>
-                    <div className="flex justify-center w-full mb-10">
+                    {/* Jam Analog dan Day/Night Indicator */}
+                    <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="flex justify-center items-center">
+                            <AnalogClock />
+                        </div>
+                        <div className="flex justify-center items-center">
+                            <DayNightIndicator />
+                        </div>
+                    </div>
+
+                    <h2 className="text-xl font-bold mt-4">Hasil Deteksi (Perkiraan 1 Jam kedepan)</h2>
+                    <div className="flex justify-center w-full mb-4">
                         <table className="w-full max-w-xl border-collapse rounded-lg overflow-hidden shadow-lg bg-white">
                             <thead>
                                 <tr className="bg-blue-600 text-white">

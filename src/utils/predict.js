@@ -1,13 +1,13 @@
 import * as tf from '@tensorflow/tfjs';
 
-// Prefer assets from public folder so they are served at /assets/Model/*
-const PUB_MODEL_URL = '/assets/Model/model.json';
-const PUB_LABELS_URL = '/assets/Model/labels.json';
-const PUB_SCALER_URL = '/assets/Model/scaler.json';
+// Prefer assets from public folder so they are served at /assets/Model-V2/*
+const PUB_MODEL_URL = '/assets/Model-V2/model.json';
+const PUB_LABELS_URL = '/assets/Model-V2/labels.json';
+const PUB_SCALER_URL = '/assets/Model-V2/scaler.json';
 // Fallback to src path (dev only) if public path is unavailable
-const SRC_MODEL_URL = '/src/assets/Model/model.json';
-const SRC_LABELS_URL = '/src/assets/Model/labels.json';
-const SRC_SCALER_URL = '/src/assets/Model/scaler.json';
+const SRC_MODEL_URL = '/src/assets/Model-V2/model.json';
+const SRC_LABELS_URL = '/src/assets/Model-V2/labels.json';
+const SRC_SCALER_URL = '/src/assets/Model-V2/scaler.json';
 
 let graphModelPromise;
 let labelsPromise;
@@ -58,13 +58,40 @@ export function extraFeatures() {
   return [0, 0, 0, 0];
 }
 
-// Build 18-length vector: [values(5), time(9), extra(4)] and standardize using scaler
+export function windFeatures(kecepatan) {
+  const wind_deg = 0;
+  const wind_sin = 0;
+  const wind_cos = 1;
+  const wind_x = kecepatan * wind_cos;
+  const wind_y = kecepatan * wind_sin;
+  return [wind_deg, wind_sin, wind_cos, wind_x, wind_y];
+}
+
+export function dayMask(date = new Date()) {
+  const d = new Date(date);
+  const hour = d.getHours();
+  const isDay = (hour >= 6 && hour < 18) ? 1.0 : 0.0;
+  return tf.tensor([[isDay]]);
+}
+
+// Build feature vector with wind features: [values(5), time(9), extra(4), wind(5)] = 23 features
 export function preprocessTSVector(values, date, scaler) {
-  const feats = [...values, ...timeFeatures(date), ...extraFeatures()];
+  const [suhu, kelembapan, curah_hujan, kecepatan_angin, tutupan_awan] = values;
+  const timeFeats = timeFeatures(date);
+  const diffFeats = extraFeatures();
+  const windFeats = windFeatures(kecepatan_angin);
+  
+  const feats = [
+    suhu, kelembapan, curah_hujan, kecepatan_angin, tutupan_awan,
+    ...timeFeats,
+    ...diffFeats,
+    ...windFeats
+  ];
+  
   const norm = scaler?.mean?.length === feats.length
     ? feats.map((v, i) => normalize(v, scaler.mean[i], scaler.std[i]))
     : feats;
-  // Repeat for 24 time steps -> [1,24,18]
+  // Repeat for 24 time steps -> [1,24,23]
   const seq = Array(24).fill(norm);
   return tf.tensor([seq]);
 }
@@ -96,14 +123,21 @@ export async function predictFromModel({ weather, date = new Date(), dataUrl, fi
   const values = buildOWMValues(weather);
   const ts = preprocessTSVector(values, date, scaler);
   const img = file ? await tensorFromFile(file) : await tensorFromDataURL(dataUrl);
-  const out = await model.executeAsync({ img_input: img, ts_input1: ts, ts_input2: ts });
+  const mask = dayMask(date);
+  
+  const out = await model.executeAsync({ 
+    img_input: img, 
+    ts_input: ts, 
+    mask_day: mask 
+  });
+  
   const probsTensor = Array.isArray(out) ? out[0] : out;
   const probs = await probsTensor.data();
   const arr = Array.from(probs);
   let maxIdx = 0; let maxVal = -Infinity;
   for (let i = 0; i < arr.length; i++) { if (arr[i] > maxVal) { maxVal = arr[i]; maxIdx = i; } }
   const label = labels?.[String(maxIdx)] ?? String(maxIdx);
-  img.dispose(); ts.dispose(); probsTensor.dispose();
+  img.dispose(); ts.dispose(); mask.dispose(); probsTensor.dispose();
   return { index: maxIdx, label, confidence: maxVal * 100, probs: arr, labels };
 }
 
