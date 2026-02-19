@@ -55,6 +55,15 @@ export default function Header() {
                     >
                         Camera
                     </NavLink>
+                    <NavLink
+                        to="/sample"
+                        className={({ isActive }) =>
+                            `px-4 py-2 rounded transition duration-300 ${isActive ? "bg-black text-white" : "hover:bg-black hover:text-white"
+                            }`
+                        }
+                    >
+                        Sample
+                    </NavLink>
                 </nav>
             </div>
 
@@ -90,6 +99,15 @@ export default function Header() {
                             Camera
                         </NavLink>
                     </li>
+                    <li>
+                        <NavLink
+                            to="/sample"
+                            className="block hover:bg-black hover:text-white px-8 py-6 rounded transition duration-300 text-center"
+                            onClick={() => setIsMenuOpen(false)}
+                        >
+                            Sample
+                        </NavLink>
+                    </li>
                 </ul>
             </div>
 
@@ -115,6 +133,15 @@ export default function Header() {
                             onClick={() => setIsMenuOpen(false)}
                         >
                             Camera
+                        </NavLink>
+                    </li>
+                    <li>
+                        <NavLink
+                            to="/sample"
+                            className="block hover:bg-black hover:text-white px-8 py-6 rounded transition duration-300 text-center"
+                            onClick={() => setIsMenuOpen(false)}
+                        >
+                            Sample
                         </NavLink>
                     </li>
                 </ul>
