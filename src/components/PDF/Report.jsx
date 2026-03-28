@@ -1,5 +1,7 @@
 import React from 'react';
 import { useLocation, NavLink } from 'react-router-dom';
+import LocationCard from '../card/LocationCard.jsx';
+import DayNightIndicator from '../DayNightIndicator.jsx';
 
 export default function Report() {
   const { state } = useLocation();
@@ -8,6 +10,7 @@ export default function Report() {
   const history = state?.history || [];
   const deviceInfo = state?.deviceInfo || 'Unknown';
   const latency = state?.latency || '-';
+  const location = state?.location || { lat: null, lng: null, address: '' };
 
   return (
     <div className="bg-white p-8 print:p-0 min-h-screen font-sans">
@@ -32,6 +35,15 @@ export default function Report() {
       
       <div className="text-center mb-4">
         <p className="text-md text-gray-700 font-medium">Device User: {deviceInfo}</p>
+      </div>
+
+      <div className="flex flex-col items-center gap-4 mb-6">
+        <div className="w-full max-w-sm">
+          <LocationCard lat={location.lat} lng={location.lng} address={location.address} />
+        </div>
+        <div className="w-full max-w-sm flex items-center justify-center">
+          <DayNightIndicator />
+        </div>
       </div>
 
       {/* Gambar hasil capture */}

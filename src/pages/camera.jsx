@@ -277,6 +277,7 @@ export default function Camera() {
                 history,
                 deviceInfo,
                 latency,
+                location,
             }
         });
     };
