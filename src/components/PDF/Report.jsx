@@ -6,6 +6,8 @@ export default function Report() {
   const imgData = state?.imgData;
   const result = state?.result || { cerah: null, berawan: null, hujan: null };
   const history = state?.history || [];
+  const deviceInfo = state?.deviceInfo || 'Unknown';
+  const latency = state?.latency || '-';
 
   return (
     <div className="bg-white p-8 print:p-0 min-h-screen font-sans">
@@ -24,8 +26,12 @@ export default function Report() {
       </div>
 
       {/* Judul Hasil */}
-      <div className="text-center mt-8 mb-4">
+      <div className="text-center mt-8 mb-2">
         <span className="text-2xl font-bold">Hasil</span>
+      </div>
+      
+      <div className="text-center mb-4">
+        <p className="text-md text-gray-700 font-medium">Device User: {deviceInfo}</p>
       </div>
 
       {/* Gambar hasil capture */}
@@ -62,6 +68,10 @@ export default function Report() {
               <td className="py-2 px-4 font-semibold">Hujan</td>
               <td className="py-2 px-4">{result.hujan ?? '-'}%</td>
             </tr>
+            <tr>
+              <td className="py-2 px-4 font-semibold text-blue-800">Latency</td>
+              <td className="py-2 px-4 font-semibold text-blue-800">{latency} ms</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -77,11 +87,12 @@ export default function Report() {
                 <th className="py-2 px-3 text-left">Cerah</th>
                 <th className="py-2 px-3 text-left">Berawan</th>
                 <th className="py-2 px-3 text-left">Hujan</th>
+                <th className="py-2 px-3 text-left">Latency</th>
               </tr>
             </thead>
             <tbody>
               {history.length === 0 ? (
-                <tr><td colSpan="4" className="py-3 px-3 text-center opacity-60">Belum ada riwayat</td></tr>
+                <tr><td colSpan="5" className="py-3 px-3 text-center opacity-60">Belum ada riwayat</td></tr>
               ) : (
                 history.map((h, i) => (
                   <tr key={i} className={i % 2 ? 'bg-gray-50' : ''}>
@@ -89,6 +100,7 @@ export default function Report() {
                     <td className="py-2 px-3">{h.cerah}%</td>
                     <td className="py-2 px-3">{h.berawan}%</td>
                     <td className="py-2 px-3">{h.hujan}%</td>
+                    <td className="py-2 px-3">{h.latency} ms</td>
                   </tr>
                 ))
               )}

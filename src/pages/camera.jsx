@@ -7,12 +7,17 @@ import WeatherCard from '../components/card/weatherCard.jsx';
 import AnalogClock from '../components/AnalogClock.jsx';
 import DayNightIndicator from '../components/DayNightIndicator.jsx';
 import { predictFromModel } from '../utils/predict.js';
+import * as tf from '@tensorflow/tfjs';
+import { UAParser } from 'ua-parser-js';
 
 export default function Camera() {
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
     const [result, setResult] = useState({ cerah: null, berawan: null, hujan: null, top: '' });
-    const [history, setHistory] = useState([]); // {time, cerah, berawan, hujan}
+    const [latency, setLatency] = useState(0);
+    const [deviceInfo, setDeviceInfo] = useState('Detecting device...');
+    const lastHistoryTimeRef = useRef(''); // keep track of last recorded minute
+    const [history, setHistory] = useState([]); // {time, cerah, berawan, hujan, latency}
     const [loading, setLoading] = useState(false);
     const [fileImage, setFileImage] = useState(null);
     const [weather, setWeather] = useState(null);
@@ -90,6 +95,26 @@ export default function Camera() {
         };
         updateBP();
         window.addEventListener('resize', updateBP);
+
+        // Detect device info
+        const parser = new UAParser();
+        const parsedUA = parser.getResult();
+        
+        let deviceType = parsedUA.device.type || "desktop";
+        // Capitalize first letter
+        deviceType = deviceType.charAt(0).toUpperCase() + deviceType.slice(1);
+        
+        const vendor = parsedUA.device.vendor || parsedUA.browser.name || "Unknown Vendor";
+        const model = parsedUA.device.model ? ` ${parsedUA.device.model}` : "";
+        const os = parsedUA.os.name ? ` (${parsedUA.os.name})` : "";
+        const cpu = parsedUA.cpu.architecture ? ` [${parsedUA.cpu.architecture}]` : "";
+        
+        const initBackend = async () => {
+            await tf.ready();
+            setDeviceInfo(`${deviceType} - ${vendor}${model}${os}${cpu} | tfjs: ${tf.getBackend()}`);
+        };
+        initBackend();
+
         if (navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(
                 (pos) => {
@@ -179,7 +204,10 @@ export default function Camera() {
                 const date = new Date();
                 const dataUrl = fileImage ? null : captureDataURL();
                 const args = fileImage ? { file: fileImage } : { dataUrl };
+                const t0 = performance.now();
                 const pred = await predictFromModel({ weather, date, ...args });
+                const t1 = performance.now();
+                setLatency((t1 - t0).toFixed(2));
                 const labels = pred.labels || { '0': 'Cerah', '1': 'Berawan', '2': 'Hujan' };
                 // Try to map to indices 0/1/2; fallback by matching label text
                 const toPct = (idxOrName) => {
@@ -190,10 +218,16 @@ export default function Camera() {
                 const cerah = toPct(0) || toPct('cerah');
                 const berawan = toPct(1) || toPct('awan');
                 const hujan = toPct(2) || toPct('hujan');
+                
+                const currentLatency = (t1 - t0).toFixed(2);
+                setLatency(currentLatency);
                 setResult({ cerah, berawan, hujan, top: pred.label });
-                // Append history each minute (when seconds roll over near 0)
-                if (date.getSeconds() < 2) {
-                    setHistory((h) => [...h, { time: date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }), cerah, berawan, hujan }].slice(-120));
+                
+                // Record history once per minute
+                const currentTimeStr = date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+                if (lastHistoryTimeRef.current !== currentTimeStr) {
+                    lastHistoryTimeRef.current = currentTimeStr;
+                    setHistory((h) => [...h, { time: currentTimeStr, cerah, berawan, hujan, latency: currentLatency }].slice(-120));
                 }
             } catch {
                 // If failed or timed out, try one immediate retry with a fresh frame
@@ -201,7 +235,9 @@ export default function Camera() {
                     const date = new Date();
                     const dataUrl = fileImage ? null : captureDataURL();
                     const args = fileImage ? { file: fileImage } : { dataUrl };
+                    const t0 = performance.now();
                     const pred = await predictFromModel({ weather, date, ...args });
+                    const t1 = performance.now();
                     const labels = pred.labels || { '0': 'Cerah', '1': 'Berawan', '2': 'Hujan' };
                     const toPct = (idxOrName) => {
                         if (typeof idxOrName === 'number') return Math.round((pred.probs?.[idxOrName] ?? 0) * 100);
@@ -211,7 +247,15 @@ export default function Camera() {
                     const cerah = toPct(0) || toPct('cerah');
                     const berawan = toPct(1) || toPct('awan');
                     const hujan = toPct(2) || toPct('hujan');
+                    const currentLatency = (t1 - t0).toFixed(2);
+                    setLatency(currentLatency);
                     setResult({ cerah, berawan, hujan, top: pred.label });
+                    
+                    const currentTimeStr = date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+                    if (lastHistoryTimeRef.current !== currentTimeStr) {
+                        lastHistoryTimeRef.current = currentTimeStr;
+                        setHistory((h) => [...h, { time: currentTimeStr, cerah, berawan, hujan, latency: currentLatency }].slice(-120));
+                    }
                 } catch { /* ignore */ }
             } finally {
                 clearTimeout(timeout);
@@ -231,6 +275,8 @@ export default function Camera() {
                 imgData,
                 result,
                 history,
+                deviceInfo,
+                latency,
             }
         });
     };
@@ -312,6 +358,7 @@ export default function Camera() {
                     </div>
 
                     <h2 className="text-xl font-bold mt-4">Hasil Deteksi (Perkiraan 1 Jam kedepan)</h2>
+                    <p className="text-sm text-gray-600 mb-2 font-medium">Device User: {deviceInfo}</p>
                     <div className="flex justify-center w-full mb-4">
                         <table className="w-full max-w-xl border-collapse rounded-lg overflow-hidden shadow-lg bg-white">
                             <thead>
@@ -351,6 +398,12 @@ export default function Camera() {
                                         )}
                                     </td>
                                 </tr>
+                                <tr className="bg-gray-50">
+                                    <td className="py-2 px-4 font-semibold text-blue-800">Latency</td>
+                                    <td className="py-2 px-4 font-semibold text-blue-800">
+                                        {latency ? `${latency} ms` : '-'}
+                                    </td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
@@ -365,11 +418,12 @@ export default function Camera() {
                                         <th className="py-2 px-3 text-left">Cerah</th>
                                         <th className="py-2 px-3 text-left">Berawan</th>
                                         <th className="py-2 px-3 text-left">Hujan</th>
+                                        <th className="py-2 px-3 text-left">Latency</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {history.length === 0 ? (
-                                        <tr><td colSpan="4" className="py-3 px-3 text-center opacity-60">Belum ada riwayat</td></tr>
+                                        <tr><td colSpan="5" className="py-3 px-3 text-center opacity-60">Belum ada riwayat</td></tr>
                                     ) : (
                                         history.map((h, i) => (
                                             <tr key={i} className={i % 2 ? 'bg-gray-50' : ''}>
@@ -377,6 +431,7 @@ export default function Camera() {
                                                 <td className="py-2 px-3">{h.cerah}%</td>
                                                 <td className="py-2 px-3">{h.berawan}%</td>
                                                 <td className="py-2 px-3">{h.hujan}%</td>
+                                                <td className="py-2 px-3">{h.latency} ms</td>
                                             </tr>
                                         ))
                                     )}
