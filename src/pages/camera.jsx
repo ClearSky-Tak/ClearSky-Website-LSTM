@@ -161,10 +161,17 @@ export default function Camera() {
     // Start/refresh camera stream when deviceId or facing/mobile changes
     useEffect(() => {
         if (!navigator.mediaDevices?.getUserMedia) return;
-        if (isDesktop && selectedDeviceId) {
+        
+        if (selectedDeviceId) {
             startStream({ deviceId: selectedDeviceId });
             return () => { stopStream(); };
         }
+        
+        if (isDesktop && !selectedDeviceId) {
+            startStream({});
+            return () => { stopStream(); };
+        }
+        
         if (isMobile) {
             startStream({ facingMode: facing });
             return () => { stopStream(); };
