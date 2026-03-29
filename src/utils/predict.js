@@ -110,6 +110,18 @@ export async function tensorFromFile(file) {
 }
 
 export function buildOWMValues(weather) {
+  // Parsing untuk format OpenWeatherMap (legacy) atau BMKG API
+  const isBMKG = weather?.t !== undefined;
+  
+  if (isBMKG) {
+    const temp = weather.t || 0; // °C
+    const humidity = weather.hu || 0; // %
+    const rain = weather.tp || 0; // curah hujan / total precipitation di BMKG
+    const wind = weather.ws || 0; // menggunakan nilai km/jam default dari BMKG
+    const clouds = weather.tcc || 0; // %
+    return [temp, humidity, rain, wind, clouds];
+  }
+
   const temp = weather?.main?.temp ?? 0; // °C
   const humidity = weather?.main?.humidity ?? 0; // %
   const rain = weather?.rain?.['1h'] ?? weather?.rain?.['3h'] ?? 0; // mm

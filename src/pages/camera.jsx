@@ -10,6 +10,30 @@ import { predictFromModel } from '../utils/predict.js';
 import * as tf from '@tensorflow/tfjs';
 import { UAParser } from 'ua-parser-js';
 
+const KELURAHAN_MAP = {
+    "Manokwari Barat": "92.02.12.1001", 
+    "Sanggeng": "92.02.12.1002",
+    "Wosi": "92.02.12.1003",
+    "Amban": "92.02.12.1004",
+    "Padarni": "92.02.12.1005",
+    "Manokwari Timur": "92.02.12.1006",
+    "Udopi": "92.02.12.2007",
+    "Ingramui": "92.02.12.2008",
+    "Soribo": "92.02.12.2009",
+    "Tanah Merah": "92.02.12.2010"
+};
+
+function getAdm4FromAddress(addressStr) {
+    if (!addressStr) return { code: '92.02.12.1001', isOutside: true }; // default Manokwari Barat jika tidak ada data
+    const upperAddress = addressStr.toUpperCase();
+    for (const [kelName, code] of Object.entries(KELURAHAN_MAP)) {
+        if (upperAddress.includes(kelName.toUpperCase())) {
+            return { code, isOutside: false };
+        }
+    }
+    return { code: '92.02.12.1001', isOutside: true }; // default Manokwari Barat jika tidak cocok
+}
+
 export default function Camera() {
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
@@ -22,6 +46,7 @@ export default function Camera() {
     const [fileImage, setFileImage] = useState(null);
     const [weather, setWeather] = useState(null);
     const [location, setLocation] = useState({ lat: null, lng: null, address: '' });
+    const [isOutsideManokwari, setIsOutsideManokwari] = useState(false);
     // Responsive flags
     const [isMobile, setIsMobile] = useState(false);
     const [isDesktop, setIsDesktop] = useState(true);
@@ -137,26 +162,63 @@ export default function Camera() {
         };
     }, []);
 
-    // Fetch weather data setiap menit
+    // Fetch weather data setiap menit (menggunakan BMKG API)
     useEffect(() => {
-        const apiKey = import.meta.env.VITE_OPENWEATHER_API_KEY;
-        if (!apiKey || !location.lat || !location.lng) return;
+        const { code: adm4Code, isOutside } = getAdm4FromAddress(location.address);
+        
+        // Update state to show warning to user
+        if (location.address) {
+            setIsOutsideManokwari(isOutside);
+        }
 
-        const fetchWeather = () => {
-            fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${location.lat}&lon=${location.lng}&appid=${apiKey}&units=metric&lang=id`)
-                .then(res => res.json())
-                .then(setWeather)
-                .catch(() => {});
+        const fetchWeather = async () => {
+            try {
+                const res = await fetch(`https://api.bmkg.go.id/publik/prakiraan-cuaca?adm4=${adm4Code}`);
+                if (!res.ok) throw new Error("Gagal mengambil data BMKG");
+                const resData = await res.json();
+                
+                // Cari data cuaca yang paling mendekati waktu saat ini
+                const now = new Date();
+                let closestWeather = null;
+                let minDiff = Infinity;
+
+                if (resData.data && resData.data[0] && resData.data[0].cuaca) {
+                    const cuacaGroups = resData.data[0].cuaca;
+                    cuacaGroups.forEach(group => {
+                        group.forEach(item => {
+                            const dataTime = new Date(item.local_datetime.replace(' ', 'T'));
+                            const diff = Math.abs(now - dataTime);
+                            if (diff < minDiff) {
+                                minDiff = diff;
+                                closestWeather = item;
+                            }
+                        });
+                    });
+                }
+
+                if (closestWeather) {
+                    // Set data lokasi (name dari adm2/adm3/adm4) jika diperlukan, 
+                    // dan gabungkan dengan data terdekat
+                    const locationData = resData.data[0].lokasi || {};
+                    const weatherObj = {
+                        ...closestWeather,
+                        name: `${locationData.desa}, ${locationData.kecamatan}`
+                    };
+                    setWeather(weatherObj);
+                }
+            } catch (err) {
+                console.error(err);
+            }
         };
 
         // Fetch immediately
         fetchWeather();
 
-        // Fetch setiap 1 menit (60000ms)
+        // Fetch setiap 1 menit (60000ms) - namun API BMKG biasanya update per beberapa jam 
         const intervalId = setInterval(fetchWeather, 60000);
 
         return () => clearInterval(intervalId);
-    }, [location.lat, location.lng]);
+    }, [location.address]);
 
     // Start/refresh camera stream when deviceId or facing/mobile changes
     useEffect(() => {
@@ -323,8 +385,13 @@ export default function Camera() {
             {/* On mobile: show Location & Weather above camera */}
             {isMobile && (
                 <div className="w-full grid grid-cols-1 gap-4 mb-4">
+                    {isOutsideManokwari && (
+                        <div className="alert alert-warning shadow-lg text-sm mb-2">
+                            <span><strong className="font-bold">Perhatian:</strong> Lokasi Anda di luar dataset kami atau tidak terdeteksi. Data Cuaca dialihkan ke Manokwari Barat secara otomatis.</span>
+                        </div>
+                    )}
                     <LocationCard lat={location.lat} lng={location.lng} address={location.address} />
-                        <WeatherCard lat={location.lat} lng={location.lng} />
+                    <WeatherCard adm4={getAdm4FromAddress(location.address).code} />
                 </div>
             )}
             <div className="flex flex-col md:flex-row gap-8">
@@ -349,10 +416,17 @@ export default function Camera() {
                 <div className="md:w-1/2 flex flex-col items-center justify-start gap-4">
                     {/* Desktop/Tablet: show Location & Weather at top of right column */}
                     {isDesktop && (
-                        <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <LocationCard lat={location.lat} lng={location.lng} address={location.address} />
-                            <WeatherCard lat={location.lat} lng={location.lng} />
-                        </div>
+                        <>
+                            {isOutsideManokwari && (
+                                <div className="alert alert-warning shadow-lg text-sm w-full">
+                                    <span><strong className="font-bold">Perhatian:</strong> Lokasi Anda di luar dataset kami atau tidak terdeteksi. Data Cuaca dialihkan ke Manokwari Barat secara otomatis.</span>
+                                </div>
+                            )}
+                            <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <LocationCard lat={location.lat} lng={location.lng} address={location.address} />
+                                <WeatherCard adm4={getAdm4FromAddress(location.address).code} />
+                            </div>
+                        </>
                     )}
 
                     {/* Jam Analog dan Day/Night Indicator */}
