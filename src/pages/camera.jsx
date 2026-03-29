@@ -9,6 +9,11 @@ import DayNightIndicator from '../components/DayNightIndicator.jsx';
 import { predictFromModel } from '../utils/predict.js';
 import * as tf from '@tensorflow/tfjs';
 import { UAParser } from 'ua-parser-js';
+import wilayahJson from '../assets/Data/wilayah.json';
+
+const WILAYAH_DATA = wilayahJson.find(i => i.type === 'table' && i.name === 'wilayah')?.data || [];
+const adm4Data = WILAYAH_DATA.filter(item => item.kode && item.kode.split('.').length === 4);
+const SORTED_WILAYAH_DATA = [...adm4Data].sort((a, b) => b.nama.trim().length - a.nama.trim().length);
 
 const KELURAHAN_MAP = {
     "Manokwari Barat": "92.02.12.1001", 
@@ -26,12 +31,30 @@ const KELURAHAN_MAP = {
 function getAdm4FromAddress(addressStr) {
     if (!addressStr) return { code: '92.02.12.1001', isOutside: true }; // default Manokwari Barat jika tidak ada data
     const upperAddress = addressStr.toUpperCase();
-    for (const [kelName, code] of Object.entries(KELURAHAN_MAP)) {
+    
+    let isOutside = true;
+    for (const kelName of Object.keys(KELURAHAN_MAP)) {
         if (upperAddress.includes(kelName.toUpperCase())) {
-            return { code, isOutside: false };
+            isOutside = false;
+            break;
         }
     }
-    return { code: '92.02.12.1001', isOutside: true }; // default Manokwari Barat jika tidak cocok
+
+    let code = '92.02.12.1001';
+    const matched = SORTED_WILAYAH_DATA.find(item => upperAddress.includes(item.nama.trim().toUpperCase()));
+    
+    if (matched) {
+        code = matched.kode;
+    } else if (!isOutside) {
+        for (const [kelName, kelCode] of Object.entries(KELURAHAN_MAP)) {
+            if (upperAddress.includes(kelName.toUpperCase())) {
+                code = kelCode;
+                break;
+            }
+        }
+    }
+
+    return { code, isOutside };
 }
 
 export default function Camera() {

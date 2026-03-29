@@ -18,6 +18,7 @@ export default function WeatherCard({ adm4 }) {
     const controller = new AbortController();
 
     const fetchWeather = async () => {
+      setError(null);
       try {
         const res = await fetch(`https://api.bmkg.go.id/publik/prakiraan-cuaca?adm4=${adm4Code}`, { signal: controller.signal });
         if (!res.ok) throw new Error('Gagal memuat cuaca');
