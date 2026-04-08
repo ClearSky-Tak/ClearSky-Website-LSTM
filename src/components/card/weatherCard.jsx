@@ -17,37 +17,54 @@ export default function WeatherCard({ adm4 }) {
     const adm4Code = adm4 || import.meta.env.VITE_BMKG_ADM4 || '92.02.12.1001';
     const controller = new AbortController();
 
+    const fetchFromBMKG = async (code) => {
+      const res = await fetch(`https://api.bmkg.go.id/publik/prakiraan-cuaca?adm4=${code}`, { signal: controller.signal });
+      if (!res.ok) return null;
+      const resData = await res.json();
+      
+      const now = new Date();
+      let closestWeather = null;
+      let minDiff = Infinity;
+
+      if (resData.data && resData.data[0] && resData.data[0].cuaca) {
+          const cuacaGroups = resData.data[0].cuaca;
+          cuacaGroups.forEach(group => {
+              if (Array.isArray(group)) {
+                  group.forEach(item => {
+                      if (item && item.local_datetime) {
+                          const dataTime = new Date(item.local_datetime.replace(' ', 'T'));
+                          const diff = Math.abs(now - dataTime);
+                          if (diff < minDiff) {
+                              minDiff = diff;
+                              closestWeather = item;
+                          }
+                      }
+                  });
+              }
+          });
+      }
+      if (closestWeather) return { closestWeather, loc: resData.data[0].lokasi };
+      return null;
+    };
+
     const fetchWeather = async () => {
       setError(null);
       try {
-        const res = await fetch(`https://api.bmkg.go.id/publik/prakiraan-cuaca?adm4=${adm4Code}`, { signal: controller.signal });
-        if (!res.ok) throw new Error('Gagal memuat cuaca');
-        const resData = await res.json();
+        let data = await fetchFromBMKG(adm4Code);
         
-        const now = new Date();
-        let closestWeather = null;
-        let minDiff = Infinity;
-
-        if (resData.data && resData.data[0] && resData.data[0].cuaca) {
-            const cuacaGroups = resData.data[0].cuaca;
-            cuacaGroups.forEach(group => {
-                group.forEach(item => {
-                    const dataTime = new Date(item.local_datetime.replace(' ', 'T'));
-                    const diff = Math.abs(now - dataTime);
-                    if (diff < minDiff) {
-                        minDiff = diff;
-                        closestWeather = item;
-                    }
-                });
-            });
+        // Fallback jika cuaca di titik user tidak tersedia
+        if (!data && adm4Code !== '92.02.12.1001') {
+            data = await fetchFromBMKG('92.02.12.1001');
         }
-        
-        if (closestWeather) {
-          setWeather(closestWeather);
-          const loc = resData.data[0].lokasi;
+
+        if (data && data.closestWeather) {
+          setWeather(data.closestWeather);
+          const loc = data.loc;
           if (loc) {
-            setLocationName(`${loc.desa}, ${loc.kecamatan}`);
+            setLocationName(`${loc.desa || loc.kecamatan || ''}, ${loc.kotkab || ''}`);
           }
+        } else {
+            throw new Error('Data cuaca tidak tersedia untuk lokasi ini');
         }
       } catch (e) {
         if (e.name !== 'AbortError') setError(e.message);

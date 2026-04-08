@@ -195,12 +195,11 @@ export default function Camera() {
         }
 
         const fetchWeather = async () => {
-            try {
-                const res = await fetch(`https://api.bmkg.go.id/publik/prakiraan-cuaca?adm4=${adm4Code}`);
-                if (!res.ok) throw new Error("Gagal mengambil data BMKG");
+            const getBMKGData = async (code) => {
+                const res = await fetch(`https://api.bmkg.go.id/publik/prakiraan-cuaca?adm4=${code}`);
+                if (!res.ok) return null;
                 const resData = await res.json();
                 
-                // Cari data cuaca yang paling mendekati waktu saat ini
                 const now = new Date();
                 let closestWeather = null;
                 let minDiff = Infinity;
@@ -208,24 +207,40 @@ export default function Camera() {
                 if (resData.data && resData.data[0] && resData.data[0].cuaca) {
                     const cuacaGroups = resData.data[0].cuaca;
                     cuacaGroups.forEach(group => {
-                        group.forEach(item => {
-                            const dataTime = new Date(item.local_datetime.replace(' ', 'T'));
-                            const diff = Math.abs(now - dataTime);
-                            if (diff < minDiff) {
-                                minDiff = diff;
-                                closestWeather = item;
-                            }
-                        });
+                        if (Array.isArray(group)) {
+                            group.forEach(item => {
+                                if (item && item.local_datetime) {
+                                    const dataTime = new Date(item.local_datetime.replace(' ', 'T'));
+                                    const diff = Math.abs(now - dataTime);
+                                    if (diff < minDiff) {
+                                        minDiff = diff;
+                                        closestWeather = item;
+                                    }
+                                }
+                            });
+                        }
                     });
                 }
-
+                
                 if (closestWeather) {
-                    // Set data lokasi (name dari adm2/adm3/adm4) jika diperlukan, 
-                    // dan gabungkan dengan data terdekat
-                    const locationData = resData.data[0].lokasi || {};
+                    return { closestWeather, loc: resData.data[0].lokasi };
+                }
+                return null;
+            };
+
+            try {
+                let data = await getBMKGData(adm4Code);
+                
+                // Fallback otomatis jika data dari lokasi (adm4Code) ini tidak ada/tidak lengkap/Gagal
+                if (!data && adm4Code !== '92.02.12.1001') {
+                    data = await getBMKGData('92.02.12.1001'); // Manokwari Barat
+                }
+
+                if (data && data.closestWeather) {
+                    const locationData = data.loc || {};
                     const weatherObj = {
-                        ...closestWeather,
-                        name: `${locationData.desa}, ${locationData.kecamatan}`
+                        ...data.closestWeather,
+                        name: `${locationData.desa || locationData.kecamatan || ''}`
                     };
                     setWeather(weatherObj);
                 }
